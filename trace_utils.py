@@ -106,7 +106,7 @@ def dump_json(path: str | Path, obj: Any) -> None:
 
 
 def load_json(path: str | Path) -> Any:
-    with Path(path).open("r", encoding="utf-8") as handle:
+    with Path(path).open("r", encoding="utf-8-sig") as handle:
         return json.load(handle)
 
 
@@ -121,7 +121,7 @@ def dump_jsonl(path: str | Path, rows: Iterable[dict[str, Any]]) -> None:
 
 def load_jsonl(path: str | Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    with Path(path).open("r", encoding="utf-8") as handle:
+    with Path(path).open("r", encoding="utf-8-sig") as handle:
         for line in handle:
             stripped = line.strip()
             if stripped:

@@ -13,6 +13,26 @@ def _prompt_ids(trace: dict[str, Any]) -> list[int] | None:
     value = trace.get("input_ids", trace.get("prompt_input_ids"))
     if value is None:
         return None
+    if value and isinstance(value[0], list):
+        value = value[0]
+    return [int(token_id) for token_id in value]
+
+
+def _normalize_generated_text(value: Any) -> str | list[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, list) and len(value) == 1:
+        return str(value[0])
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return str(value)
+
+
+def _normalize_token_ids(value: Any) -> list[int] | None:
+    if value is None:
+        return None
+    if value and isinstance(value[0], list):
+        value = value[0]
     return [int(token_id) for token_id in value]
 
 
@@ -176,18 +196,22 @@ def compare_traces(args: argparse.Namespace) -> dict[str, Any]:
     vllm_output = _maybe_load(args.vllm_output)
     output_report = None
     if hf_output is not None and vllm_output is not None:
+        hf_text = _normalize_generated_text(hf_output.get("generated_text"))
+        vllm_text = _normalize_generated_text(vllm_output.get("generated_text"))
+        hf_token_ids = _normalize_token_ids(hf_output.get("token_ids"))
+        vllm_token_ids = _normalize_token_ids(vllm_output.get("token_ids"))
         output_report = {
-            "hf_generated_text": hf_output.get("generated_text"),
-            "vllm_generated_text": vllm_output.get("generated_text"),
-            "generated_text_equal": hf_output.get("generated_text") == vllm_output.get("generated_text"),
-            "token_ids_equal": hf_output.get("token_ids") == vllm_output.get("token_ids"),
+            "hf_generated_text": hf_text,
+            "vllm_generated_text": vllm_text,
+            "generated_text_equal": hf_text == vllm_text,
+            "token_ids_equal": hf_token_ids == vllm_token_ids,
         }
 
     preprocess = _compare_preprocess(hf_preprocess, vllm_preprocess)
     decode = _compare_decode_steps(hf_steps, vllm_steps, logprob_atol=args.logprob_atol)
     passed = (
         bool(preprocess["chat_template_equal"])
-        and preprocess["prompt_ids_equal"] is not False
+        and preprocess["prompt_ids_equal"] is True
         and bool(preprocess["raw_mm_equal"])
         and bool(decode["token_ids_equal"])
         and (output_report is None or bool(output_report["generated_text_equal"]))
