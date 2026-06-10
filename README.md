@@ -63,6 +63,21 @@
   - `simulate_client_payload_from_video()`：从本地视频模拟客户端上传的 frames + wav。
   - `compare_direct_video_vs_client_payload()`：比较直接视频路径和客户端 payload 路径的差异。
 
+- `validate_qwen3_omni_alignment.py`
+  - 按官方 Transformers 调用形态验证直接视频路径和客户端帧列表路径。
+
+- `trace_utils.py`
+  - 统一保存 JSON / JSONL trace，并用 shape、dtype、hash 摘要表示大 tensor。
+
+- `trace_transformers_qwen3_omni.py`
+  - 保存 Transformers Thinker 文本链路的预处理 trace、逐步 token、top-k logprob 和最终文本。
+
+- `trace_vllm_qwen3_omni.py`
+  - 保存 vLLM Python offline Thinker 文本链路的同格式 trace。
+
+- `compare_service_outputs.py`
+  - 离线比较 Transformers 和 vLLM 生成的 trace，定位 prompt、预处理输入或 decode step 的第一处分叉。
+
 - `AGENTS.md`
   - 给后续协作人员或代码代理看的工程说明和维护边界。
 
@@ -174,6 +189,66 @@ CLI 会输出类似如下字段：
 ```
 
 如果 shape 不一致，测试代码不会强行相减，会先报告 shape mismatch。
+
+## 比较 Transformers 和 vLLM 服务输出
+
+如果要比较两个框架的服务输出是否一致，建议先只比较 Qwen3-Omni Thinker 文本生成链路，不要一开始比较 hidden states 或 Talker 音频输出。流程是两边分别保存统一格式的 trace，然后离线比较：
+
+1. `chat_template_text` 是否完全一致。
+2. prompt token ids 是否完全一致。
+3. image / audio / video 的数量、shape、dtype、hash 是否一致。
+4. 每一步生成的 `chosen_token_id` 是否一致。
+5. 第一次 token 不一致时，比较上一处或当前 step 的 top-k logprob。
+
+准备一个 conversation JSON 文件，例如 `conversation.json`：
+
+```json
+[
+  {
+    "role": "user",
+    "content": [
+      {"type": "video", "video": "/path/to/demo.mp4"},
+      {"type": "text", "text": "What can you see and hear? Answer in one short sentence."}
+    ]
+  }
+]
+```
+
+Transformers 侧保存 trace：
+
+```bash
+python trace_transformers_qwen3_omni.py \
+  --model-path /path/to/Qwen3-Omni-30B-A3B-Instruct \
+  --conversation-file conversation.json \
+  --output-dir traces/hf \
+  --local-files-only
+```
+
+vLLM Python offline 侧保存同格式 trace：
+
+```bash
+python trace_vllm_qwen3_omni.py \
+  --model-path /path/to/Qwen3-Omni-30B-A3B-Instruct \
+  --conversation-file conversation.json \
+  --output-dir traces/vllm \
+  --local-files-only \
+  --trust-remote-code
+```
+
+离线比较：
+
+```bash
+python compare_service_outputs.py \
+  --hf-preprocess traces/hf/hf_preprocess_trace.json \
+  --vllm-preprocess traces/vllm/vllm_preprocess_trace.json \
+  --hf-steps traces/hf/hf_decode_steps.jsonl \
+  --vllm-steps traces/vllm/vllm_decode_steps.jsonl \
+  --hf-output traces/hf/hf_output.json \
+  --vllm-output traces/vllm/vllm_output.json \
+  --output service_compare_report.json
+```
+
+比较脚本会输出 `passed`、`prompt_ids_equal`、`raw_mm_equal`、`matching_prefix_steps`、`first_token_divergence` 等字段。若 prompt 或多模态输入摘要已经不同，后续生成文本不同通常是预期结果，应先修输入链路。
 
 ## 依赖
 

@@ -1,4 +1,10 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
-
+hf_preprocess_trace.json
+vllm_preprocess_trace.json
+hf_decode_steps.jsonl
+vllm_decode_steps.jsonl
+hf_output.json
+vllm_output.json
+service_compare_report.json
